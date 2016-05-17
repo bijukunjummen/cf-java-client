@@ -20,7 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.tuple.Tuple2;
-import reactor.io.netty.config.ClientOptions;
+import reactor.io.netty.config.HttpClientOptions;
 import reactor.io.netty.http.HttpClient;
 import reactor.io.netty.http.HttpException;
 
@@ -38,8 +38,6 @@ import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
-
-import static reactor.io.netty.config.NettyHandlerNames.SslHandler;
 
 final class DefaultSslCertificateTruster implements SslCertificateTruster {
 
@@ -112,10 +110,13 @@ final class DefaultSslCertificateTruster implements SslCertificateTruster {
     }
 
     private static HttpClient getHttpClient(ProxyContext proxyContext, CertificateCollectingTrustManager collector) {
-        return HttpClient.create(ClientOptions.create()
-            .sslSupport()
-            .pipelineConfigurer(pipeline -> proxyContext.getHttpProxyHandler().ifPresent(handler -> pipeline.addBefore(SslHandler, null, handler)))
-            .sslConfigurer(ssl -> ssl.trustManager(new StaticTrustManagerFactory(collector))));
+        HttpClientOptions options = HttpClientOptions.create()
+            .sslSupport();
+
+        proxyContext.ifConfigured((host, port, username, password) -> options.proxy(host, port, username, u -> password));
+        options.ssl().trustManager(new StaticTrustManagerFactory(collector));
+
+        return HttpClient.create(options);
     }
 
     private static X509TrustManager getTrustManager(TrustManagerFactory trustManagerFactory) {

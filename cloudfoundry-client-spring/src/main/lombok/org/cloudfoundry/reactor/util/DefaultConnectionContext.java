@@ -22,14 +22,12 @@ import lombok.NonNull;
 import org.springframework.web.util.UriComponents;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
-import reactor.io.netty.config.ClientOptions;
+import reactor.io.netty.config.HttpClientOptions;
 import reactor.io.netty.http.HttpClient;
 
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
-
-import static reactor.io.netty.config.NettyHandlerNames.SslHandler;
 
 public final class DefaultConnectionContext implements ConnectionContext {
 
@@ -57,7 +55,7 @@ public final class DefaultConnectionContext implements ConnectionContext {
     DefaultConnectionContext(@NonNull AuthorizationProvider authorizationProvider, String clientId, String clientSecret, @NonNull String host, ObjectMapper objectMapper, Integer port,
                              String proxyHost, String proxyPassword, Integer proxyPort, String proxyUsername, Boolean trustCertificates) {
 
-        ProxyContext proxyContext = ProxyContext.builder()
+        ProxyContext proxyContext = DefaultProxyContext.builder()
             .host(proxyHost)
             .password(proxyPassword)
             .port(proxyPort)
@@ -115,10 +113,13 @@ public final class DefaultConnectionContext implements ConnectionContext {
     }
 
     private static HttpClient createHttpClient(ProxyContext proxyContext, Optional<SslCertificateTruster> sslCertificateTruster) {
-        return HttpClient.create(ClientOptions.create()
-            .sslSupport()
-            .pipelineConfigurer(pipeline -> proxyContext.getHttpProxyHandler().ifPresent(handler -> pipeline.addBefore(SslHandler, null, handler)))
-            .sslConfigurer(ssl -> sslCertificateTruster.ifPresent(trustManager -> ssl.trustManager(new StaticTrustManagerFactory(trustManager)))));
+        HttpClientOptions options = HttpClientOptions.create()
+            .sslSupport();
+
+        proxyContext.ifConfigured((host, port, username, password) -> options.proxy(host, port, username, u -> password));
+        sslCertificateTruster.ifPresent(trustManager -> options.ssl().trustManager(new StaticTrustManagerFactory(trustManager)));
+
+        return HttpClient.create(options);
     }
 
     private static Optional<SslCertificateTruster> createSslCertificateTruster(ProxyContext proxyContext, Boolean trustCertificates) {
